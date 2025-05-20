@@ -2,15 +2,14 @@ import csv
 import os
 import random
 from datetime import datetime, timedelta
-import holidays  # UK holidays library
+import holidays
 
 food_categories = ['Dessert', 'Soup', 'Main Course', 'Appetizer', 'Salad', 'Beverage']
 
-def generate(hotel_name: str, start_date: datetime):
+def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
     days_in_year = 365
     year = start_date.year
 
-    # Get UK holidays for the given year
     uk_holidays = holidays.UnitedKingdom(years=year)
     holiday_dict = {day.strftime("%Y-%m-%d"): name for day, name in uk_holidays.items()}
 
@@ -44,9 +43,9 @@ def generate(hotel_name: str, start_date: datetime):
         prev_day = (date - timedelta(days=1)).strftime("%Y-%m-%d")
         next_day = (date + timedelta(days=1)).strftime("%Y-%m-%d")
         return (
-            (date.weekday() == 0 and prev_day in holiday_dict) or  # Monday after holiday
-            (date.weekday() == 4 and next_day in holiday_dict) or  # Friday before holiday
-            (date.weekday() in [5, 6] and date_str in holiday_dict)  # holiday falls on weekend
+            (date.weekday() == 0 and prev_day in holiday_dict) or
+            (date.weekday() == 4 and next_day in holiday_dict) or
+            (date.weekday() in [5, 6] and date_str in holiday_dict)
         )
 
     data = []
@@ -60,12 +59,11 @@ def generate(hotel_name: str, start_date: datetime):
         temperature, humidity = seasonal_weather(season)
         is_raining = random.choices([0, 1], weights=[0.6, 0.4])[0]
         is_sunny = 1 if not is_raining and random.random() > 0.5 else 0
-        food_category = random.choice(food_categories)
 
         if date_str in holiday_dict:
             is_holiday = 1
             holiday_name = holiday_dict[date_str]
-        elif weekday in [5, 6]:  # Saturday or Sunday
+        elif weekday in [5, 6]:
             is_holiday = 1
             holiday_name = 'Weekend'
         else:
@@ -74,19 +72,75 @@ def generate(hotel_name: str, start_date: datetime):
 
         long_weekend = is_long_weekend(date)
 
-        if long_weekend:
-            food_waste = round(random.uniform(0.5, 3.0), 1)
-        elif is_holiday:
-            food_waste = round(random.uniform(2.0, 8.0), 1)
-        elif weekday in [0, 2]:  # Monday or Wednesday
-            food_waste = round(random.uniform(10.0, 25.0), 1)
-        else:
-            food_waste = round(random.uniform(5.0, 15.0), 1)
+        # Updated waste calculation per food category
+        waste = {}
+        for category in food_categories:
+            base = 0
 
-        data.append([
+            if category == 'Dessert':
+                if temperature > 20 and is_sunny:
+                    base = 2  # less waste
+                elif is_raining:
+                    base = 5
+                else:
+                    base = 3
+
+            elif category == 'Soup':
+                if temperature < 10 and is_raining:
+                    base = 2
+                elif temperature > 15:
+                    base = 5
+                else:
+                    base = 3
+
+            elif category == 'Main Course':
+                base = 8
+                if is_holiday or long_weekend:
+                    base *= 1.2
+                if weekday in [0, 2]:
+                    base *= 1.1
+
+            elif category == 'Appetizer':
+                base = 4
+                if weekday in [5, 6]:
+                    base *= 1.3
+                if is_raining:
+                    base *= 0.8
+
+            elif category == 'Salad':
+                if temperature > 18 and is_sunny:
+                    base = 2
+                elif is_raining:
+                    base = 4
+                elif weekday in [5, 6]:
+                    base = 5
+                else:
+                    base = 3
+
+            elif category == 'Beverage':
+                if temperature > 22 and is_sunny:
+                    base = 1.5
+                elif temperature < 10:
+                    base = 4
+                else:
+                    base = 2.5
+
+            # Final adjustments
+            if long_weekend:
+                base *= 0.5
+            elif is_holiday:
+                base *= 0.7
+            elif weekday in [0, 2]:
+                base *= 1.3
+
+            waste[category] = round(random.uniform(0.5, 1) * base * scale_factor, 1)
+
+        row = [
             date_str, temperature, humidity, is_raining, is_sunny,
-            food_category, is_holiday, holiday_name, food_waste
-        ])
+            is_holiday, holiday_name
+        ] + [waste[cat] for cat in food_categories]
+
+        data.append(row)
 
     # Write CSV
     csv_filename = f"{start_date.year}.csv"
@@ -95,11 +149,11 @@ def generate(hotel_name: str, start_date: datetime):
         writer = csv.writer(file)
         writer.writerow([
             "Date", "Temperature", "Humidity", "Is_Raining", "Is_Sunny",
-            "Food_Category", "Is_Holiday", "Holiday_Name", "Food_Waste_kg"
-        ])
+            "Is_Holiday", "Holiday_Name"
+        ] + [f"{cat}_Waste_kg" for cat in food_categories])
         writer.writerows(data)
 
-    print(f"CSV file '{csv_filename}' generated in folder '{hotel_name}'.")
+    print(f"✅ CSV file '{csv_filename}' generated in folder '{hotel_name}' with updated waste logic.")
 
-# ✅ Example usage:
-generate(hotel_name="The London Larder", start_date=datetime(2023, 1, 1))
+# ✅ Example usage
+generate(hotel_name="The Yorkshire Pantry", start_date=datetime(2023, 1, 1), scale_factor=5.0)
