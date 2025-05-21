@@ -2,40 +2,42 @@ import csv
 import os
 import random
 from datetime import datetime, timedelta
+
 import holidays
 
-food_categories = ['Dessert', 'Soup', 'Main Course', 'Appetizer', 'Salad', 'Beverage']
+food_categories = ['Dessert', 'Soup', 'Main_Course', 'Appetizer', 'Salad', 'Beverage']
+
 
 def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
     days_in_year = 365
     year = start_date.year
 
-    uk_holidays = holidays.UnitedKingdom(years=year)
-    holiday_dict = {day.strftime("%Y-%m-%d"): name for day, name in uk_holidays.items()}
+    indian_holidays = holidays.India(years=year)
+    holiday_dict = {day.strftime("%Y-%m-%d"): name for day, name in indian_holidays.items()}
 
     def get_season(month):
         if month in [12, 1, 2]:
             return 'Winter'
-        elif month in [3, 4, 5]:
-            return 'Spring'
-        elif month in [6, 7, 8]:
+        elif month in [3, 4, 5, 6]:
             return 'Summer'
+        elif month in [7, 8, 9]:
+            return 'Monsoon'
         else:
             return 'Autumn'
 
     def seasonal_weather(season):
         if season == 'Winter':
-            temp = round(random.uniform(0.0, 7.0), 1)
-            humidity = random.randint(70, 95)
-        elif season == 'Spring':
-            temp = round(random.uniform(7.0, 15.0), 1)
-            humidity = random.randint(60, 85)
+            temp = round(random.uniform(10.0, 25.0), 1)
+            humidity = random.randint(40, 70)
         elif season == 'Summer':
-            temp = round(random.uniform(15.0, 25.0), 1)
-            humidity = random.randint(50, 75)
-        else:
-            temp = round(random.uniform(7.0, 15.0), 1)
-            humidity = random.randint(60, 90)
+            temp = round(random.uniform(30.0, 45.0), 1)
+            humidity = random.randint(30, 60)
+        elif season == 'Monsoon':
+            temp = round(random.uniform(25.0, 35.0), 1)
+            humidity = random.randint(70, 95)
+        else:  # Autumn
+            temp = round(random.uniform(25.0, 35.0), 1)
+            humidity = random.randint(50, 80)
         return temp, humidity
 
     def is_long_weekend(date):
@@ -57,7 +59,13 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
         season = get_season(month)
 
         temperature, humidity = seasonal_weather(season)
-        is_raining = random.choices([0, 1], weights=[0.6, 0.4])[0]
+
+        # Rainfall logic for India
+        if season == 'Monsoon':
+            is_raining = 1 if random.random() < 0.6 else 0
+        else:
+            is_raining = random.choices([0, 1], weights=[0.7, 0.3])[0]
+
         is_sunny = 1 if not is_raining and random.random() > 0.5 else 0
 
         if date_str in holiday_dict:
@@ -72,28 +80,27 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
 
         long_weekend = is_long_weekend(date)
 
-        # Updated waste calculation per food category
         waste = {}
         for category in food_categories:
             base = 0
 
             if category == 'Dessert':
-                if temperature > 20 and is_sunny:
-                    base = 2  # less waste
+                if temperature > 30 and is_sunny:
+                    base = 0.5
                 elif is_raining:
                     base = 5
                 else:
                     base = 3
 
             elif category == 'Soup':
-                if temperature < 10 and is_raining:
+                if temperature < 20 and is_raining:
                     base = 1
-                elif temperature > 15:
+                elif temperature > 30:
                     base = 5
                 else:
                     base = 2
 
-            elif category == 'Main Course':
+            elif category == 'Main_Course':
                 base = 8
                 if is_holiday or long_weekend:
                     base *= 1.2
@@ -108,7 +115,7 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
                     base *= 0.8
 
             elif category == 'Salad':
-                if temperature > 18 and is_sunny:
+                if temperature > 30 and is_sunny:
                     base = 2
                 elif is_raining:
                     base = 4
@@ -118,14 +125,14 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
                     base = 3
 
             elif category == 'Beverage':
-                if temperature > 22 and is_sunny:
+                if temperature > 35 and is_sunny:
                     base = 1.5
-                elif temperature < 10:
+                elif temperature < 15:
                     base = 4
                 else:
                     base = 2.5
 
-            # Final adjustments
+            # Adjustments
             if long_weekend:
                 base *= 0.5
             elif is_holiday:
@@ -153,10 +160,12 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
         ] + [f"{cat}_Waste_kg" for cat in food_categories])
         writer.writerows(data)
 
-    print(f"✅ CSV file '{csv_filename}' generated in folder '{hotel_name}' with updated waste logic.")
-hotels = ['The Crown & Cutlery','The Lime Tree Kitchen','The London Larder','The Yorkshire Pantry']
-years = [2021,2022,2023]
+    print(f"✅ CSV file '{csv_filename}' generated in folder '{hotel_name}' with Indian context.")
+
+
+# Example execution
+hotels = ['Supreme Bakery', 'Saranva Bhavan', 'Mamta Rasooi', 'Kaffehaus', 'Plav', 'Souther Delight']
+years = [2022, 2023, 2024]
 for hotel in hotels:
     for year in years:
-        # ✅ Example usage
         generate(hotel_name=hotel, start_date=datetime(year, 1, 1), scale_factor=5.0)
