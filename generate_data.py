@@ -87,11 +87,11 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
 
             elif category == 'Soup':
                 if temperature < 10 and is_raining:
-                    base = 2
+                    base = 1
                 elif temperature > 15:
                     base = 5
                 else:
-                    base = 3
+                    base = 2
 
             elif category == 'Main Course':
                 base = 8
@@ -133,7 +133,7 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
             elif weekday in [0, 2]:
                 base *= 1.3
 
-            waste[category] = round(random.uniform(0.5, 1) * base * scale_factor, 1)
+            waste[category] = round(random.uniform(0.9, 1) * base * scale_factor, 1)
 
         row = [
             date_str, temperature, humidity, is_raining, is_sunny,
@@ -154,6 +154,9 @@ def generate(hotel_name: str, start_date: datetime, scale_factor: float = 5.0):
         writer.writerows(data)
 
     print(f"✅ CSV file '{csv_filename}' generated in folder '{hotel_name}' with updated waste logic.")
-
-# ✅ Example usage
-generate(hotel_name="The Yorkshire Pantry", start_date=datetime(2023, 1, 1), scale_factor=5.0)
+hotels = ['The Crown & Cutlery','The Lime Tree Kitchen','The London Larder','The Yorkshire Pantry']
+years = [2021,2022,2023]
+for hotel in hotels:
+    for year in years:
+        # ✅ Example usage
+        generate(hotel_name=hotel, start_date=datetime(year, 1, 1), scale_factor=5.0)
