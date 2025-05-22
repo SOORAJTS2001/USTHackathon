@@ -192,7 +192,6 @@ def load_and_train():
     global models, feature_names, importances, accuracies, encoder, df_plot
 
     base_path = pathlib.Path(__file__).parent / "Plav"
-    os.makedirs("predicted_data", exist_ok=True)
     dfs = [pd.read_csv(os.path.join(base_path, file)) for file in os.listdir(base_path) if file.endswith(".csv")]
     df = pd.concat(dfs, ignore_index=True)
 
@@ -490,7 +489,10 @@ def compare_actual_vs_predicted():
 
 @app.get("/plot")
 async def plot_from_predictions():
-    pred_df = pd.read_csv("predicted_data/predictions.csv")
+    if os.path.exists("predicted_data/predictions.csv"):
+        pred_df = pd.read_csv("predicted_data/predictions.csv")
+    else:
+        pred_df = pd.read_csv("predicted_data/default.csv")
     all_data_df = pd.concat([df_plot, pred_df], ignore_index=True)
     df = all_data_df[['Date', 'Dessert_Waste_kg', 'Soup_Waste_kg',
        'Main_Course_Waste_kg', 'Appetizer_Waste_kg', 'Salad_Waste_kg',
