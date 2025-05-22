@@ -1,6 +1,5 @@
 import os
 from datetime import datetime, timedelta
-from functools import lru_cache
 
 import holidays
 import httpx
@@ -38,6 +37,64 @@ class PredictionRequest(BaseModel):
     is_sunny: int | None = None
     is_holiday: bool | None = None
     holiday_name: str | None = None
+
+
+def upsert_csv_row_pandas(new_row_dict: list[dict]):
+    filename = "predicted_data/predictions.csv"
+    """Upserts a row (as dict) to a CSV using Pandas, keeping 'Date' unique and column order fixed."""
+    columns = [
+        "Date",
+        "Temperature",
+        "Humidity",
+        "Is_Raining",
+        "Is_Sunny",
+        "Is_Holiday",
+        "Holiday_Name",
+        "Dessert_Waste_kg",
+        "Soup_Waste_kg",
+        "Main_Course_Waste_kg",
+        "Appetizer_Waste_kg",
+        "Salad_Waste_kg",
+        "Beverage_Waste_kg"
+    ]
+    for row in new_row_dict:
+        # Convert the row into a one-row DataFrame with correct column order
+        row["Date"] = row.pop("date")
+        row["Temperature"] = row.pop("temperature")
+        row["Humidity"] = row.pop("humidity")
+        row["Is_Raining"] = row.pop("is_raining")
+        row["Is_Sunny"] = row.pop("is_sunny")
+        row["Is_Holiday"] = row.pop("is_holiday")
+        row["Holiday_Name"] = row.pop("holiday_name")
+        row['Dessert_Waste_kg'] = row['predictions'].pop("Dessert_Waste_kg")
+        row['Soup_Waste_kg'] = row['predictions'].pop("Soup_Waste_kg")
+        row['Main_Course_Waste_kg'] = row['predictions'].pop("Main_Course_Waste_kg")
+        row['Appetizer_Waste_kg'] = row['predictions'].pop("Appetizer_Waste_kg")
+        row['Salad_Waste_kg'] = row['predictions'].pop("Salad_Waste_kg")
+        row['Beverage_Waste_kg'] = row['predictions'].pop("Beverage_Waste_kg")
+        row.pop("predictions")
+        new_row_df = pd.DataFrame([row], columns=columns)
+        if os.path.exists(filename):
+            df = pd.read_csv(filename)
+
+            # Check for column mismatch
+            if set(df.columns) != set(columns):
+                raise ValueError("CSV columns don't match provided columns")
+            df["Holiday_Name"] = df["Holiday_Name"].astype("string")
+            new_row_df["Holiday_Name"] = new_row_df["Holiday_Name"].astype("string")
+            df.set_index("Date", inplace=True)
+            new_row_df.set_index("Date", inplace=True)
+
+            # Update or append
+            df.update(new_row_df)
+            combined_df = pd.concat([df, new_row_df[~new_row_df.index.isin(df.index)]])
+            combined_df.reset_index(inplace=True)
+        else:
+            combined_df = new_row_df
+        # Ensure column order is preserved
+        combined_df = combined_df[columns]
+        combined_df.to_csv(filename, index=False)
+
 
 async def get_weather_forecast_day(req: PredictionRequest) -> PredictionRequest:
     async with httpx.AsyncClient() as client:
@@ -114,7 +171,7 @@ async def get_weather_forecast_week(lat: float, lon: float):
 @app.on_event("startup")
 def load_and_train():
     global models, feature_names, importances, accuracies, encoder
-
+    os.makedirs("predicted_data", exist_ok=True)
     base_path = "/Users/254428/PycharmProjects/USTHackathon/Plav"
     dfs = [pd.read_csv(os.path.join(base_path, file)) for file in os.listdir(base_path) if file.endswith(".csv")]
     df = pd.concat(dfs, ignore_index=True)
@@ -185,10 +242,11 @@ async def enrich_request(req: PredictionRequest) -> PredictionRequest:
     iso_date = date_obj.date()
 
     is_holiday = 1 if iso_date in in_holidays else 0
-    holiday_name = in_holidays.get(iso_date, "None")
+    holiday_name = in_holidays.get(iso_date, None)
     req.is_holiday = is_holiday
     req.holiday_name = holiday_name
     return req
+
 
 @app.post("/predict")
 async def predict(req: PredictionRequest):
@@ -216,19 +274,38 @@ async def predict(req: PredictionRequest):
                 "accuracy": round(accuracies.get(target, 0), 3),
                 "feature_contributions_percent": sorted_contrib
             }
+        data_ = {
+            "date": req.date,
+            "temperature": req.temperature,
+            "humidity": req.humidity,
+            "is_raining": req.is_raining,
+            "is_sunny": req.is_sunny,
+            "is_weekend": int(pd.to_datetime(req.date).dayofweek in [5, 6]),
+            "is_holiday": req.is_holiday,
+            "holiday_name": req.holiday_name,
+            "predictions": predictions,
+        }
         if req.filter and predictions.get(req.filter):
             predictions = {req.filter: predictions.get(req.filter)}
-        return JSONResponse(content={
+        data = {
             "date": req.date,
+            "temperature": req.temperature,
+            "humidity": req.humidity,
+            "is_raining": req.is_raining,
+            "is_sunny": req.is_sunny,
             "is_weekend": int(pd.to_datetime(req.date).dayofweek in [5, 6]),
             "is_holiday": req.is_holiday,
             "holiday_name": req.holiday_name,
             "predictions": predictions,
             # "model_insights": insights
-        })
+        }
+        # for updated csv
+        upsert_csv_row_pandas([data_])
+        return JSONResponse(content=data)
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise e
+        # return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/predict-week")
@@ -237,12 +314,13 @@ async def predict_week(req: PredictionRequest):
         start_date = datetime.strptime(req.date, "%Y-%m-%d")
         weather_data = await get_weather_forecast_week(lat=req.latitude, lon=req.longitude)
         results = []
+        results_ = []
 
         for i in range(7):
             current_date = start_date + timedelta(days=i)
             iso_date = current_date.date()
             is_holiday = 1 if iso_date in in_holidays else 0
-            holiday_name = in_holidays.get(iso_date, "None")
+            holiday_name = in_holidays.get(iso_date, None)
             is_weekend = int(current_date.weekday() in [5, 6])
             data_ = weather_data[str(iso_date)]
             req.temperature = data_["temperature"]
@@ -270,10 +348,22 @@ async def predict_week(req: PredictionRequest):
                     "accuracy": round(accuracies.get(target, 0), 3),
                     "feature_contributions_percent": sorted_contrib
                 }
+            data_ = {
+                "date": str(iso_date),
+                "temperature": req.temperature,
+                "humidity": req.humidity,
+                "is_weekend": is_weekend,
+                "is_holiday": is_holiday,
+                "is_raining": req.is_raining,
+                "is_sunny": req.is_sunny,
+                "holiday_name": holiday_name,
+                "predictions": predictions,
+                "model_insights": insights
+            }
             if req.filter and predictions.get(req.filter) and insights.get(req.filter):
-                predictions = {req.filter: predictions.get(req.filter)}
-                insights = {req.filter: insights.get(req.filter)}
-            results.append({
+                predictions = predictions[req.filter]
+                insights = insights[req.filter]
+            data = {
                 "date": str(iso_date),
                 "temperature": req.temperature,
                 "humidity": req.humidity,
@@ -285,9 +375,17 @@ async def predict_week(req: PredictionRequest):
                 "predictions": predictions,
                 "model_insights": insights
 
-            })
-
+            }
+            results.append(data)
+            results_.append(data_)
+        # for all fields
+        upsert_csv_row_pandas(results_)
         return JSONResponse(content={"weekly_predictions": results})
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise e
+        # return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/plot")
+async def predict_week():
+    pass
