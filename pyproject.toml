@@ -33,6 +33,8 @@ typing_extensions = "4.13.2"
 tzdata = "2025.2"
 uvicorn = "0.34.2"
 httpx = "^0.28.1"
+seaborn = "^0.13.2"
+matplotlib = "^3.10.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

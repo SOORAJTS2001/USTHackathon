@@ -1,3 +1,4 @@
+import io
 import os
 import pathlib
 import random
@@ -7,13 +8,18 @@ import holidays
 import httpx
 import pandas as pd
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse,HTMLResponse
+from fastapi.responses import JSONResponse, Response, HTMLResponse
 from pydantic import BaseModel
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 import json
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
 app = FastAPI()
 
 # Globals
@@ -22,6 +28,8 @@ feature_names = []
 importances = {}
 accuracies = {}
 encoder = None
+
+df_plot = None
 
 # US holidays (change to "IN" for India, "GB" for UK, etc.)
 in_holidays = holidays.country_holidays("IN", years=range(2020, 2031))
@@ -181,7 +189,7 @@ async def get_weather_forecast_week(lat: float, lon: float):
 
 @app.on_event("startup")
 def load_and_train():
-    global models, feature_names, importances, accuracies, encoder
+    global models, feature_names, importances, accuracies, encoder, df_plot
 
     base_path = pathlib.Path(__file__).parent / "Plav"
     os.makedirs("predicted_data", exist_ok=True)
@@ -192,6 +200,7 @@ def load_and_train():
     df['DayOfWeek'] = df['Date'].dt.dayofweek
     df['Month'] = df['Date'].dt.month
     df['Is_Weekend'] = df['DayOfWeek'].isin([5, 6]).astype(int)
+    df_plot = df.copy()
     df.drop(columns=['Date'], inplace=True)
 
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
@@ -478,3 +487,60 @@ def compare_actual_vs_predicted():
         </body>
     </html>
     """
+
+@app.get("/plot")
+async def plot_from_predictions():
+    pred_df = pd.read_csv("predicted_data/predictions.csv")
+    all_data_df = pd.concat([df_plot, pred_df], ignore_index=True)
+    df = all_data_df[['Date', 'Dessert_Waste_kg', 'Soup_Waste_kg',
+       'Main_Course_Waste_kg', 'Appetizer_Waste_kg', 'Salad_Waste_kg',
+       'Beverage_Waste_kg']]
+
+    df['Date'] = pd.to_datetime(df['Date'])
+
+    df['Year'] = df['Date'].dt.year
+    df['MonthDay'] = df['Date'].dt.strftime('%m-%d')
+
+    df.rename(columns={'Dessert_Waste_kg': 'Dessert', 'Soup_Waste_kg': 'Soup',
+       'Main_Course_Waste_kg': 'Main Course', 'Appetizer_Waste_kg': 'Appetizer', 'Salad_Waste_kg': 'Salad',
+       'Beverage_Waste_kg': 'Beverage'}, inplace=True)
+
+    df_melted = df.melt(
+        id_vars=['Year', 'MonthDay'],
+        value_vars=['Soup', 'Appetizer', 'Salad', 'Main Course', 'Dessert', 'Beverage'],
+        var_name='metric',
+        value_name='wastage'
+    )
+
+    df_melted = df_melted[df_melted["MonthDay"] == df_melted["MonthDay"].iloc[-1]]
+
+    g = sns.FacetGrid(df_melted, col="metric", col_wrap=2, height=4, sharey=False, sharex=True, aspect=1, legend_out=False)
+    g.fig.suptitle(f'Wastage in Kilograms / Day of the Year ({df["MonthDay"].iloc[-1]})', fontsize=15, fontweight='bold')
+    g.map_dataframe(sns.barplot, x="Year", y="wastage", palette="muted", hue="Year")
+
+    g.set_titles(col_template="{col_name}", size=14, y=0.96)
+    g.set_axis_labels("year", "wastage (kg)")
+
+    for ax in g.axes.flat:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+
+    g.add_legend()
+    sns.move_legend(g, "upper right", frameon=False)
+
+    line = Line2D(
+        [0.15, 0.85],
+        [0.95, 0.95],
+        transform=g.fig.transFigure,
+        color="black",
+        linewidth=1.2
+    )
+    g.fig.lines.append(line)
+    g.fig.subplots_adjust(top=0.92)
+
+    img_buf = io.BytesIO()
+    plt.savefig(img_buf, format='png')
+    buf_contents = img_buf.getvalue()
+    img_buf.close()
+
+    headers = {'Content-Disposition': 'inline; filename="wastage.png"'}
+    return Response(buf_contents, headers=headers, media_type='image/png')
