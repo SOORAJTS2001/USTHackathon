@@ -1,4 +1,5 @@
 import os
+import pathlib
 from datetime import datetime, timedelta
 
 import holidays
@@ -171,8 +172,9 @@ async def get_weather_forecast_week(lat: float, lon: float):
 @app.on_event("startup")
 def load_and_train():
     global models, feature_names, importances, accuracies, encoder
+
+    base_path = pathlib.Path(__file__).parent / "Plav"
     os.makedirs("predicted_data", exist_ok=True)
-    base_path = "/Users/254428/PycharmProjects/USTHackathon/Plav"
     dfs = [pd.read_csv(os.path.join(base_path, file)) for file in os.listdir(base_path) if file.endswith(".csv")]
     df = pd.concat(dfs, ignore_index=True)
 
@@ -291,8 +293,7 @@ async def predict(req: PredictionRequest):
         return JSONResponse(content=data)
 
     except Exception as e:
-        raise e
-        # return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/predict-week")
