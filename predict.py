@@ -6,13 +6,13 @@ import holidays
 import httpx
 import pandas as pd
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,HTMLResponse
 from pydantic import BaseModel
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
-
+import json
 app = FastAPI()
 
 # Globals
@@ -38,6 +38,15 @@ class PredictionRequest(BaseModel):
     is_sunny: int | None = None
     is_holiday: bool | None = None
     holiday_name: str | None = None
+
+WASTE_COLUMNS = [
+    "Dessert_Waste_kg",
+    "Soup_Waste_kg",
+    "Main_Course_Waste_kg",
+    "Appetizer_Waste_kg",
+    "Salad_Waste_kg",
+    "Beverage_Waste_kg"
+]
 
 
 def upsert_csv_row_pandas(new_row_dict: list[dict]):
@@ -371,9 +380,101 @@ async def predict_week(req: PredictionRequest):
         return JSONResponse(content={"weekly_predictions": results})
 
     except Exception as e:
-        raise e
-        # return JSONResponse(status_code=500, content={"error": str(e)})
+        # raise e
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.get("/plot")
-async def predict_week():
-    pass
+@app.get("/analytics", response_class=HTMLResponse)
+def compare_actual_vs_predicted():
+    trained_data_path = pathlib.Path(__file__).parent / "Plav"
+    trained_dfs = []
+    trained_filenames = []
+
+    for file in os.listdir(trained_data_path):
+        if file.endswith(".csv"):
+            df = pd.read_csv(trained_data_path / file, parse_dates=["Date"])
+            trained_dfs.append(df)
+            trained_filenames.append(file)
+
+    pred_df = pd.read_csv("predicted_data/predictions.csv", parse_dates=["Date"])
+    pred_df["DayOfYear"] = pred_df["Date"].dt.dayofyear
+    pred_df["Date_str"] = pred_df["Date"].dt.strftime("%Y-%m-%d")
+
+    categories = [
+        "Dessert_Waste_kg", "Soup_Waste_kg", "Main_Course_Waste_kg",
+        "Appetizer_Waste_kg", "Salad_Waste_kg", "Beverage_Waste_kg"
+    ]
+
+    series = []
+
+    for cat in categories:
+        series.append({
+            "name": f"Predicted → {cat}",
+            "type": "line",
+            "data": list(zip(pred_df["DayOfYear"], pred_df[cat]))
+        })
+
+    pred_days = set(pred_df["DayOfYear"])
+
+    for filename, df in zip(trained_filenames, trained_dfs):
+        df["DayOfYear"] = df["Date"].dt.dayofyear
+        df["Date_str"] = df["Date"].dt.strftime("%Y-%m-%d")
+        df_matched = df[df["DayOfYear"].isin(pred_days)]
+
+        for cat in categories:
+            series.append({
+                "name": f"{filename} → {cat}",
+                "type": "line",
+                "data": list(zip(df_matched["DayOfYear"], df_matched[cat]))
+            })
+
+    legend_data = [s["name"] for s in series]
+    legend_selected = {name: False for name in legend_data}
+
+    chart_data = {
+        "tooltip": {
+            "trigger": "axis",
+            "formatter": """
+                function(params) {
+                    let tooltip = '<strong>Day of Year: ' + params[0].data[0] + '</strong><br>';
+                    for (let p of params) {
+                        tooltip += p.seriesName + ': ' + p.data[1] + '<br>';
+                    }
+                    return tooltip;
+                }
+            """
+        },
+        "legend": {
+            "orient": "horizontal",
+            "bottom": 10,
+            "data": legend_data,
+            "selected": legend_selected
+        },
+        "grid": {
+            "bottom": 120
+        },
+        "xAxis": {"type": "value", "name": "Day of Year"},
+        "yAxis": {"type": "value", "name": "Waste (kg)"},
+        "series": series
+    }
+
+    return f"""
+    <html>
+        <head>
+            <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+            <style>
+                body {{ background: #f9f9f9; font-family: sans-serif; padding: 2rem; }}
+                #main {{ width: 100%; height: 950px; }}
+            </style>
+        </head>
+        <body>
+            <h2>📊 Food Waste Comparison by Day-of-Year (Matched Dates Only)</h2>
+            <p><em>Click legend items below to toggle visibility.</em></p>
+            <div id="main"></div>
+            <script>
+                var chart = echarts.init(document.getElementById('main'));
+                var option = {json.dumps(chart_data)};
+                chart.setOption(option);
+            </script>
+        </body>
+    </html>
+    """
