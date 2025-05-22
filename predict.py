@@ -1,4 +1,5 @@
 import os
+import pathlib
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -115,7 +116,7 @@ async def get_weather_forecast_week(lat: float, lon: float):
 def load_and_train():
     global models, feature_names, importances, accuracies, encoder
 
-    base_path = "/Users/254428/PycharmProjects/USTHackathon/Plav"
+    base_path = pathlib.Path(__file__).parent / "Plav"
     dfs = [pd.read_csv(os.path.join(base_path, file)) for file in os.listdir(base_path) if file.endswith(".csv")]
     df = pd.concat(dfs, ignore_index=True)
 
