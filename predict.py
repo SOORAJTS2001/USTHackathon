@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 import holidays
 import httpx
@@ -30,13 +31,13 @@ class PredictionRequest(BaseModel):
     date: str  # "YYYY-MM-DD"
     latitude: float
     longitude: float
+    filter: str | None = None
     temperature: float | None = None
     humidity: float | None = None
     is_raining: int | None = None
     is_sunny: int | None = None
-    is_holiday:bool | None = None
+    is_holiday: bool | None = None
     holiday_name: str | None = None
-
 
 async def get_weather_forecast_day(req: PredictionRequest) -> PredictionRequest:
     async with httpx.AsyncClient() as client:
@@ -88,9 +89,8 @@ async def get_weather_forecast_week(lat: float, lon: float):
         weather_data = {}
 
         for i in range(len(dates)):
-            temp = temperatures[i]
-            rain = rain_sums[i]
-
+            temp = temperatures[i] or 25
+            rain = rain_sums[i] or 0
             # Estimate humidity
             if rain > 0:
                 humidity = 85 + (10 if temp < 10 else 0)
@@ -216,7 +216,8 @@ async def predict(req: PredictionRequest):
                 "accuracy": round(accuracies.get(target, 0), 3),
                 "feature_contributions_percent": sorted_contrib
             }
-
+        if req.filter and predictions.get(req.filter):
+            predictions = {req.filter: predictions.get(req.filter)}
         return JSONResponse(content={
             "date": req.date,
             "is_weekend": int(pd.to_datetime(req.date).dayofweek in [5, 6]),
@@ -269,7 +270,9 @@ async def predict_week(req: PredictionRequest):
                     "accuracy": round(accuracies.get(target, 0), 3),
                     "feature_contributions_percent": sorted_contrib
                 }
-
+            if req.filter and predictions.get(req.filter) and insights.get(req.filter):
+                predictions = {req.filter: predictions.get(req.filter)}
+                insights = {req.filter: insights.get(req.filter)}
             results.append({
                 "date": str(iso_date),
                 "temperature": req.temperature,
@@ -280,7 +283,7 @@ async def predict_week(req: PredictionRequest):
                 "is_sunny": req.is_sunny,
                 "holiday_name": holiday_name,
                 "predictions": predictions,
-            "model_insights": insights
+                "model_insights": insights
 
             })
 
