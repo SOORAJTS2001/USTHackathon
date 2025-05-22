@@ -490,7 +490,10 @@ def compare_actual_vs_predicted():
 
 @app.get("/plot")
 async def plot_from_predictions():
-    pred_df = pd.read_csv("predicted_data/predictions.csv")
+    if os.path.exists("predicted_data/predictions.csv"):
+        pred_df = pd.read_csv("predicted_data/predictions.csv")
+    else:
+        pred_df = pd.read_csv("predicted_data/default.csv")
     all_data_df = pd.concat([df_plot, pred_df], ignore_index=True)
     df = all_data_df[['Date', 'Dessert_Waste_kg', 'Soup_Waste_kg',
        'Main_Course_Waste_kg', 'Appetizer_Waste_kg', 'Salad_Waste_kg',
