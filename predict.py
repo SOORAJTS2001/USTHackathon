@@ -274,19 +274,6 @@ async def predict(req: PredictionRequest):
                 "accuracy": round(accuracies.get(target, 0), 3),
                 "feature_contributions_percent": sorted_contrib
             }
-        data_ = {
-            "date": req.date,
-            "temperature": req.temperature,
-            "humidity": req.humidity,
-            "is_raining": req.is_raining,
-            "is_sunny": req.is_sunny,
-            "is_weekend": int(pd.to_datetime(req.date).dayofweek in [5, 6]),
-            "is_holiday": req.is_holiday,
-            "holiday_name": req.holiday_name,
-            "predictions": predictions,
-        }
-        if req.filter and predictions.get(req.filter):
-            predictions = {req.filter: predictions.get(req.filter)}
         data = {
             "date": req.date,
             "temperature": req.temperature,
@@ -300,7 +287,7 @@ async def predict(req: PredictionRequest):
             # "model_insights": insights
         }
         # for updated csv
-        upsert_csv_row_pandas([data_])
+        upsert_csv_row_pandas([data])
         return JSONResponse(content=data)
 
     except Exception as e:
