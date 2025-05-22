@@ -191,7 +191,6 @@ def load_and_train():
     global models, feature_names, importances, accuracies, encoder, df_plot
 
     base_path = pathlib.Path(__file__).parent / "Plav"
-    os.makedirs("predicted_data", exist_ok=True)
     dfs = [pd.read_csv(os.path.join(base_path, file)) for file in os.listdir(base_path) if file.endswith(".csv")]
     df = pd.concat(dfs, ignore_index=True)
 
